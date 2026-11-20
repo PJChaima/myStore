@@ -55,6 +55,14 @@
     gap: 24px; padding: 16px 24px; flex-wrap: wrap;
   }
   .brand .sub { color: var(--muted); font-size: 15px; }
+  /* ลิงก์กลับหน้าเมนูหลัก */
+  .home-link {
+    display: inline-flex; align-items: center; min-height: 40px; margin-bottom: 6px;
+    padding: 4px 16px; border-radius: var(--pill); border: 1px solid var(--border);
+    background: var(--sub); color: var(--text); text-decoration: none; font-size: 15px; font-weight: 600;
+  }
+  .home-link:hover { background: #f3ecdd; }
+  .home-link:focus-visible { outline: 3px solid var(--text); outline-offset: 2px; }
   .asof {
     display: inline-flex; align-items: center; gap: 8px; margin-top: 6px;
     background: var(--sub); border: 1px solid var(--line); border-radius: var(--pill);
@@ -231,6 +239,7 @@
 <header class="top">
   <div class="top-inner">
     <div class="brand">
+      <a class="home-link" href="./index.html">← หน้าเมนูหลัก</a>
       <h1>ระบบจัดการร้านยา</h1>
       <p class="sub">หน้าผู้ดูแล · ข้อมูลจำลอง รหัสผู้ป่วยเป็นรหัสแฝง</p>
       <p class="asof">วันอ้างอิงของระบบ <b id="asof">กำลังโหลด…</b></p>
@@ -760,11 +769,13 @@ function stockRow(s) {
   const actions = el('td', { class: 'actions' });
   if (s.status === 'active') {
     actions.append(
+      actBtn('ปรับยอด', 'secondary', () => openAdjust(s)),
       actBtn('กักไว้', 'secondary', () => openStockStatus(s, 'quarantine')),
       actBtn('ตัดจำหน่าย', 'danger', () => openStockStatus(s, 'written_off'))
     );
   } else if (s.status === 'quarantine') {
     actions.append(
+      actBtn('ปรับยอด', 'secondary', () => openAdjust(s)),
       actBtn('ปล่อยใช้', 'secondary', () => openStockStatus(s, 'active')),
       actBtn('แก้วันหมดอายุ', 'secondary', () => openFixExpiry(s)),
       actBtn('ตัดจำหน่าย', 'danger', () => openStockStatus(s, 'written_off'))
@@ -1263,6 +1274,48 @@ function openFixExpiry(s) {
     validate: (v) => (!v.expiry || !isDate(v.expiry)) ? ['กรอกวันหมดอายุใหม่ให้ครบ'] : [],
     body: (v) => ({ action: 'stock_fix_expiry', stock_id: s.stock_id, expiry: v.expiry }),
     success: (r, v) => 'แก้วันหมดอายุล็อต ' + str(s.stock_id) + ' เป็น ' + v.expiry + ' แล้ว'
+  });
+}
+
+/* ---------- ปรับยอดคงเหลือของล็อต ----------
+   ส่ง POST /api/admin { action: 'stock_adjust', stock_id, expected_qty, new_qty, adj_type, reason, by }
+   - expected_qty = ยอดที่เห็นตอนเปิดกล่อง เซิร์ฟเวอร์ปฏิเสธถ้ายอดในฐานข้อมูลเปลี่ยนไปแล้ว (กันนับทับกัน)
+   - หน้าเว็บส่งยอดนับจริง เซิร์ฟเวอร์คำนวณส่วนต่าง บันทึก stock_adjustments และ change_log เอง */
+const ADJ_TYPES = ['นับสต็อกแล้วยอดไม่ตรง', 'ยาชำรุด/เสียหาย', 'ยาสูญหาย', 'อื่น ๆ'];
+
+function openAdjust(s) {
+  const cur = Number(s.qty_on_hand);
+  const diffText = (v) => {
+    if (!isNonNegInt(v.new_qty)) return '';
+    const d = Number(v.new_qty) - cur;
+    return d === 0 ? ' · ยอดเท่าเดิม' : ' · ' + (d > 0 ? 'เพิ่ม ' : 'ลด ') + fmtInt(Math.abs(d));
+  };
+  openDialog({
+    title: 'ปรับยอดล็อต ' + str(s.stock_id),
+    reason: true,
+    fields: [
+      { name: 'new_qty', label: 'ยอดคงเหลือจริง', type: 'number', step: 1, min: 0, inputmode: 'numeric', required: true,
+        value: str(s.qty_on_hand), hint: 'ยอดในระบบตอนนี้ ' + fmtInt(cur) + ' · กรอกยอดที่นับได้จริง' },
+      { name: 'adj_type', label: 'ประเภท', type: 'select', required: true, options: opts(ADJ_TYPES) }
+    ],
+    summary: (v) => 'ปรับยอด' + lotDesc(s) + (isNonNegInt(v.new_qty) ? ' → เป็น ' + fmtInt(v.new_qty) : '') + diffText(v),
+    validate: (v) => {
+      const errs = [];
+      if (!str(v.new_qty).trim()) errs.push('กรอกยอดคงเหลือจริง');
+      else if (!isNonNegInt(v.new_qty)) errs.push('ยอดต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป');
+      else if (Number(v.new_qty) === cur) errs.push('ยอดใหม่เท่ากับยอดเดิม ไม่มีอะไรต้องปรับ');
+      if (!v.adj_type) errs.push('เลือกประเภทการปรับยอด');
+      return errs;
+    },
+    body: (v) => ({
+      action: 'stock_adjust',
+      stock_id: s.stock_id,
+      expected_qty: cur,
+      new_qty: Number(v.new_qty),
+      adj_type: v.adj_type
+    }),
+    success: (r, v) => 'ปรับยอดล็อต ' + str(s.stock_id) + ' จาก ' + fmtInt(cur) + ' เป็น ' + fmtInt(v.new_qty) +
+      (r.adjustment_id ? ' · เลขที่ ' + str(r.adjustment_id) : '')
   });
 }
 
