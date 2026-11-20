@@ -16,6 +16,10 @@ const ACTIONS = {
   stock_set_status: ['stock_set_status', ['stock_id', 'status', 'reason', 'by'], b => ({ p_stock_id: b.stock_id, p_status: b.status, p_reason: b.reason, p_by: b.by })],
   dispense_return:  ['dispense_return',  ['dispense_id', 'qty', 'reason', 'by'], b => ({ p_dispense_id: b.dispense_id, p_qty: Number(b.qty), p_reason: b.reason, p_by: b.by })],
   dispense_void:    ['dispense_void',    ['dispense_id', 'reason', 'by'],      b => ({ p_dispense_id: b.dispense_id, p_reason: b.reason, p_by: b.by })],
+  // ปรับยอดคงเหลือของล็อต (ฟังก์ชันอยู่ใน adjust_stock.sql) ส่งยอดที่เห็นตอนนับมาด้วย เพื่อกันนับทับการขาย
+  stock_adjust:     ['adjust_stock',     ['stock_id', 'expected_qty', 'new_qty', 'adj_type', 'reason', 'by'],
+                      b => ({ p_stock_id: b.stock_id, p_expected_qty: Number(b.expected_qty), p_new_qty: Number(b.new_qty),
+                              p_adj_type: b.adj_type, p_reason: b.reason, p_by: b.by })],
 };
 
 function sameCode(a, b) {
